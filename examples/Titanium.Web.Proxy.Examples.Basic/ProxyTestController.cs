@@ -12,6 +12,7 @@ using Titanium.Web.Proxy.Helpers;
 using Titanium.Web.Proxy.Http;
 using Titanium.Web.Proxy.Models;
 using Titanium.Web.Proxy.StreamExtended.Network;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Titanium.Web.Proxy.Examples.Basic
 {
@@ -19,10 +20,11 @@ namespace Titanium.Web.Proxy.Examples.Basic
     {
         private readonly ProxyServer proxyServer;
 
-        private readonly CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+        private readonly CancellationTokenSource cancellationTokenSource =
+            new CancellationTokenSource();
 
-        private readonly ConcurrentQueue<Tuple<ConsoleColor?, string>> consoleMessageQueue
-            = new ConcurrentQueue<Tuple<ConsoleColor?, string>>();
+        private readonly ConcurrentQueue<Tuple<ConsoleColor?, string>> consoleMessageQueue =
+            new ConcurrentQueue<Tuple<ConsoleColor?, string>>();
 
         private ExplicitProxyEndPoint explicitEndPoint;
 
@@ -43,7 +45,10 @@ namespace Titanium.Web.Proxy.Examples.Basic
             proxyServer.ExceptionFunc = async exception =>
             {
                 if (exception is ProxyHttpException phex)
-                    WriteToConsole(exception.Message + ": " + phex.InnerException?.Message, ConsoleColor.Red);
+                    WriteToConsole(
+                        exception.Message + ": " + phex.InnerException?.Message,
+                        ConsoleColor.Red
+                    );
                 else
                     WriteToConsole(exception.Message, ConsoleColor.Red);
             };
@@ -90,7 +95,48 @@ namespace Titanium.Web.Proxy.Examples.Basic
 
             //proxyServer.EnableWinAuth = true;
 
-            explicitEndPoint = new ExplicitProxyEndPoint(IPAddress.Any, 8000);
+            // Load certificate from store
+            string certificateSubjectName = "CN=proxy.localhost"; // Replace with your certificate subject name
+            X509Certificate2 genericCertificate = null;
+
+            X509Store store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
+
+            try
+            {
+                store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+
+                X509Certificate2Collection certCollection = store.Certificates.Find(
+                    X509FindType.FindBySubjectDistinguishedName,
+                    certificateSubjectName,
+                    true // Include invalid or self-signed certificates if necessary
+                );
+
+                if (certCollection.Count > 0)
+                {
+                    genericCertificate = certCollection[0];
+                }
+                else
+                {
+                    Console.WriteLine(
+                        $"Certificate with subject name '{certificateSubjectName}' not found in the certificate store."
+                    );
+                    // Handle the case where the certificate is not found, e.g., throw an exception or exit
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"An error occurred while loading certificate: {ex.Message}");
+                // Handle any exceptions that occur
+            }
+            finally
+            {
+                store.Close();
+            }
+
+            explicitEndPoint = new ExplicitProxyEndPoint(IPAddress.Any, 8888, true)
+            {
+                GenericCertificate = genericCertificate
+            };
 
             // Fired when a CONNECT request is received
             explicitEndPoint.BeforeTunnelConnectRequest += OnBeforeTunnelConnectRequest;
@@ -132,13 +178,17 @@ namespace Titanium.Web.Proxy.Examples.Basic
             //proxyServer.AddEndPoint(socksEndPoint);
 
             foreach (var endPoint in proxyServer.ProxyEndPoints)
-                Console.WriteLine("Listening on '{0}' endpoint at Ip {1} and port: {2} ", endPoint.GetType().Name,
-                    endPoint.IpAddress, endPoint.Port);
+                Console.WriteLine(
+                    "Listening on '{0}' endpoint at Ip {1} and port: {2} ",
+                    endPoint.GetType().Name,
+                    endPoint.IpAddress,
+                    endPoint.Port
+                );
 
             // Only explicit proxies can be set as system proxy!
             //proxyServer.SetAsSystemHttpProxy(explicitEndPoint);
             //proxyServer.SetAsSystemHttpsProxy(explicitEndPoint);
-            if (RunTime.IsWindows) proxyServer.SetAsSystemProxy(explicitEndPoint, ProxyProtocolType.AllHttp);
+            //if (RunTime.IsWindows) proxyServer.SetAsSystemProxy(explicitEndPoint, ProxyProtocolType.AllHttp);
         }
 
         public void Stop()
@@ -173,7 +223,9 @@ namespace Titanium.Web.Proxy.Examples.Basic
             };
         }
 
-        private async Task<IExternalProxy> OnCustomUpStreamProxyFailureFunc(SessionEventArgsBase arg)
+        private async Task<IExternalProxy> OnCustomUpStreamProxyFailureFunc(
+            SessionEventArgsBase arg
+        )
         {
             arg.GetState().PipelineInfo.AppendLine(nameof(OnCustomUpStreamProxyFailureFunc));
 
@@ -189,14 +241,21 @@ namespace Titanium.Web.Proxy.Examples.Basic
             };
         }
 
-        private async Task OnBeforeTunnelConnectRequest(object sender, TunnelConnectSessionEventArgs e)
+        private async Task OnBeforeTunnelConnectRequest(
+            object sender,
+            TunnelConnectSessionEventArgs e
+        )
         {
             var hostname = e.HttpClient.Request.RequestUri.Host;
-            e.GetState().PipelineInfo.AppendLine(nameof(OnBeforeTunnelConnectRequest) + ":" + hostname);
+            e.GetState()
+                .PipelineInfo.AppendLine(nameof(OnBeforeTunnelConnectRequest) + ":" + hostname);
             WriteToConsole("Tunnel to: " + hostname);
 
             var clientLocalIp = e.ClientLocalEndPoint.Address;
-            if (!clientLocalIp.Equals(IPAddress.Loopback) && !clientLocalIp.Equals(IPAddress.IPv6Loopback))
+            if (
+                !clientLocalIp.Equals(IPAddress.Loopback)
+                && !clientLocalIp.Equals(IPAddress.IPv6Loopback)
+            )
                 e.HttpClient.UpStreamEndPoint = new IPEndPoint(clientLocalIp, 0);
 
             if (hostname.Contains("dropbox.com"))
@@ -231,14 +290,17 @@ namespace Titanium.Web.Proxy.Examples.Basic
                     WriteToConsole(str, color);
                 }
 
-                if (frame.OpCode == WebsocketOpCode.Text) WriteToConsole(frame.GetText(), color);
+                if (frame.OpCode == WebsocketOpCode.Text)
+                    WriteToConsole(frame.GetText(), color);
             }
         }
 
         private Task OnBeforeTunnelConnectResponse(object sender, TunnelConnectSessionEventArgs e)
         {
-            e.GetState().PipelineInfo
-                .AppendLine(nameof(OnBeforeTunnelConnectResponse) + ":" + e.HttpClient.Request.RequestUri);
+            e.GetState()
+                .PipelineInfo.AppendLine(
+                    nameof(OnBeforeTunnelConnectResponse) + ":" + e.HttpClient.Request.RequestUri
+                );
 
             return Task.CompletedTask;
         }
@@ -246,16 +308,22 @@ namespace Titanium.Web.Proxy.Examples.Basic
         // intercept & cancel redirect or update requests
         private async Task OnRequest(object sender, SessionEventArgs e)
         {
-            e.GetState().PipelineInfo.AppendLine(nameof(OnRequest) + ":" + e.HttpClient.Request.RequestUri);
+            e.GetState()
+                .PipelineInfo.AppendLine(nameof(OnRequest) + ":" + e.HttpClient.Request.RequestUri);
 
             var clientLocalIp = e.ClientLocalEndPoint.Address;
-            if (!clientLocalIp.Equals(IPAddress.Loopback) && !clientLocalIp.Equals(IPAddress.IPv6Loopback))
+            if (
+                !clientLocalIp.Equals(IPAddress.Loopback)
+                && !clientLocalIp.Equals(IPAddress.IPv6Loopback)
+            )
                 e.HttpClient.UpStreamEndPoint = new IPEndPoint(clientLocalIp, 0);
 
             if (e.HttpClient.Request.Url.Contains("yahoo.com"))
                 e.CustomUpStreamProxy = new ExternalProxy("localhost", 8888);
 
-            WriteToConsole("Active Client Connections:" + ((ProxyServer)sender).ClientConnectionCount);
+            WriteToConsole(
+                "Active Client Connections:" + ((ProxyServer)sender).ClientConnectionCount
+            );
             WriteToConsole(e.HttpClient.Request.Url);
 
             // store it in the UserData property
@@ -276,7 +344,7 @@ namespace Titanium.Web.Proxy.Examples.Basic
             // To cancel a request with a custom HTML content
             // Filter URL
             //if (e.HttpClient.Request.RequestUri.AbsoluteUri.Contains("yahoo.com"))
-            //{ 
+            //{
             //    e.Ok("<!DOCTYPE html>" +
             //          "<html><body><h1>" +
             //          "Website Blocked" +
@@ -284,23 +352,27 @@ namespace Titanium.Web.Proxy.Examples.Basic
             //          "<p>Blocked by titanium web proxy.</p>" +
             //          "</body>" +
             //          "</html>");
-            //} 
+            //}
 
             ////Redirect example
             //if (e.HttpClient.Request.RequestUri.AbsoluteUri.Contains("wikipedia.org"))
-            //{ 
+            //{
             //   e.Redirect("https://www.paypal.com");
-            //} 
+            //}
         }
 
         // Modify response
-        private async Task MultipartRequestPartSent(object sender, MultipartRequestPartSentEventArgs e)
+        private async Task MultipartRequestPartSent(
+            object sender,
+            MultipartRequestPartSentEventArgs e
+        )
         {
             e.GetState().PipelineInfo.AppendLine(nameof(MultipartRequestPartSent));
 
             var session = (SessionEventArgs)sender;
             WriteToConsole("Multipart form data headers:");
-            foreach (var header in e.Headers) WriteToConsole(header.ToString());
+            foreach (var header in e.Headers)
+                WriteToConsole(header.ToString());
         }
 
         private async Task OnResponse(object sender, SessionEventArgs e)
@@ -313,7 +385,9 @@ namespace Titanium.Web.Proxy.Examples.Basic
                 e.DataReceived += WebSocket_DataReceived;
             }
 
-            WriteToConsole("Active Server Connections:" + ((ProxyServer)sender).ServerConnectionCount);
+            WriteToConsole(
+                "Active Server Connections:" + ((ProxyServer)sender).ServerConnectionCount
+            );
 
             var ext = Path.GetExtension(e.HttpClient.Request.RequestUri.AbsolutePath);
 
@@ -321,7 +395,7 @@ namespace Titanium.Web.Proxy.Examples.Basic
             //var userData = e.HttpClient.UserData as CustomUserData;
 
             //if (ext == ".gif" || ext == ".png" || ext == ".jpg")
-            //{ 
+            //{
             //    byte[] btBody = Encoding.UTF8.GetBytes("<!DOCTYPE html>" +
             //                                           "<html><body><h1>" +
             //                                           "Image is blocked" +
@@ -335,7 +409,7 @@ namespace Titanium.Web.Proxy.Examples.Basic
 
             //    e.Respond(response);
             //    e.TerminateServerConnection();
-            //} 
+            //}
 
             //// print out process id of current session
             ////WriteToConsole($"PID: {e.HttpClient.ProcessId.Value}");
@@ -372,7 +446,8 @@ namespace Titanium.Web.Proxy.Examples.Basic
             e.GetState().PipelineInfo.AppendLine(nameof(OnCertificateValidation));
 
             // set IsValid to true/false based on Certificate Errors
-            if (e.SslPolicyErrors == SslPolicyErrors.None) e.IsValid = true;
+            if (e.SslPolicyErrors == SslPolicyErrors.None)
+                e.IsValid = true;
 
             return Task.CompletedTask;
         }
