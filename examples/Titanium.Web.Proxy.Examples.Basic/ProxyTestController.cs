@@ -135,7 +135,7 @@ namespace Titanium.Web.Proxy.Examples.Basic
 
             explicitEndPoint = new ExplicitProxyEndPoint(IPAddress.Any, 8888, true)
             {
-                GenericCertificate = genericCertificate
+                //GenericCertificate = genericCertificate
             };
 
             // Fired when a CONNECT request is received
@@ -144,20 +144,20 @@ namespace Titanium.Web.Proxy.Examples.Basic
 
             // An explicit endpoint is where the client knows about the existence of a proxy
             // So client sends request in a proxy friendly manner
-            proxyServer.AddEndPoint(explicitEndPoint);
-            proxyServer.Start();
+            //proxyServer.AddEndPoint(explicitEndPoint);
+
 
             // Transparent endpoint is useful for reverse proxy (client is not aware of the existence of proxy)
             // A transparent endpoint usually requires a network router port forwarding HTTP(S) packets
             // or by DNS to send data to this endPoint.
-            //var transparentEndPoint = new TransparentProxyEndPoint(IPAddress.Any, 443, true)
-            //{
-            //    // Generic Certificate hostname to use
-            //    // When SNI is disabled by client
-            //    GenericCertificateName = "localhost"
-            //};
+            var transparentEndPoint = new TransparentProxyEndPoint(IPAddress.Any, 8888, true)
+            {
+                GenericCertificate = genericCertificate
+            };
 
-            //proxyServer.AddEndPoint(transparentEndPoint);
+            proxyServer.AddEndPoint(transparentEndPoint);
+            proxyServer.Start();
+
             //proxyServer.UpStreamHttpProxy = new ExternalProxy("localhost", 8888);
             //proxyServer.UpStreamHttpsProxy = new ExternalProxy("localhost", 8888);
 
