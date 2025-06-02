@@ -86,8 +86,8 @@ namespace Titanium.Web.Proxy.Examples.Basic
 
         public void StartProxy()
         {
-            proxyServer.BeforeRequest += OnRequest;
-            proxyServer.BeforeResponse += OnResponse;
+            //proxyServer.BeforeRequest += OnRequest;
+            //proxyServer.BeforeResponse += OnResponse;
             proxyServer.AfterResponse += OnAfterResponse;
 
             proxyServer.ServerCertificateValidationCallback += OnCertificateValidation;
@@ -119,7 +119,7 @@ namespace Titanium.Web.Proxy.Examples.Basic
                 {
                     Console.WriteLine(
                         $"Certificate with subject name '{certificateSubjectName}' not found in the certificate store."
-                    );
+                    );  
                     // Handle the case where the certificate is not found, e.g., throw an exception or exit
                 }
             }
@@ -133,7 +133,7 @@ namespace Titanium.Web.Proxy.Examples.Basic
                 store.Close();
             }
 
-            explicitEndPoint = new ExplicitProxyEndPoint(IPAddress.Any, 8888, true)
+            explicitEndPoint = new ExplicitProxyEndPoint(IPAddress.Any, 8888, false)
             {
                 //GenericCertificate = genericCertificate
             };
@@ -144,18 +144,17 @@ namespace Titanium.Web.Proxy.Examples.Basic
 
             // An explicit endpoint is where the client knows about the existence of a proxy
             // So client sends request in a proxy friendly manner
-            //proxyServer.AddEndPoint(explicitEndPoint);
-
+            proxyServer.AddEndPoint(explicitEndPoint);
 
             // Transparent endpoint is useful for reverse proxy (client is not aware of the existence of proxy)
             // A transparent endpoint usually requires a network router port forwarding HTTP(S) packets
             // or by DNS to send data to this endPoint.
-            var transparentEndPoint = new TransparentProxyEndPoint(IPAddress.Any, 8888, true)
-            {
-                GenericCertificate = genericCertificate
-            };
+            //var transparentEndPoint = new TransparentProxyEndPoint(IPAddress.Any, 8888, false)
+            //{
+            //    GenericCertificate = genericCertificate
+            //};
 
-            proxyServer.AddEndPoint(transparentEndPoint);
+            //proxyServer.AddEndPoint(transparentEndPoint);
             proxyServer.Start();
 
             //proxyServer.UpStreamHttpProxy = new ExternalProxy("localhost", 8888);

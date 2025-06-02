@@ -44,6 +44,73 @@ public partial class ProxyServer
 
         try
         {
+            // If the endpoint is configured for HTTPS, perform SSL handshake first.
+            if (endPoint.IsHttps)
+            {
+                SslStream? sslStream = null;
+                try
+                {
+                    sslStream = new SslStream(clientStream, false);
+                    var options = new SslServerAuthenticationOptions();
+
+                    // Peek into the client stream to get SNI for certificate selection.
+                    var clientHelloInfo = await SslTools.PeekClientHello(clientStream, BufferPool, cancellationToken);
+                    if (clientStream.IsClosed) return;
+
+                    string? clientHelloHostname = null;
+                    if (clientHelloInfo != null)
+                    {
+                         clientHelloHostname = clientHelloInfo.ServerName;
+                    }
+
+                    // Use the hostname from SNI, or a default if SNI is not available.
+                    var targetHostname = !string.IsNullOrEmpty(clientHelloHostname)
+                        ? clientHelloHostname
+                        : ((IPEndPoint)clientConnection.Client.LocalEndPoint!).Address.ToString(); // Fallback to proxy IP if no SNI
+
+                    var certName = HttpHelper.GetWildCardDomainName(targetHostname,
+                        CertificateManager.DisableWildCardCertificates);
+                    var serverCertificate = endPoint.GenericCertificate ??
+                                  await CertificateManager.CreateServerCertificate(certName);
+
+                    if (serverCertificate == null)
+                    {
+                        throw new InvalidOperationException($"Could not obtain certificate for host {targetHostname}");
+                    }
+
+                    options.ServerCertificate = serverCertificate;
+                    options.ClientCertificateRequired = false;
+                    options.EnabledSslProtocols = SupportedSslProtocols;
+                    options.CertificateRevocationCheckMode = X509RevocationMode.NoCheck;
+
+                    // If HTTP/2 is enabled and supported by the client (via ALPN in ClientHello),
+                    // include h2 in the application protocols.
+                    if (EnableHttp2 && clientHelloInfo != null && clientHelloInfo.GetAlpn() != null && clientHelloInfo.GetAlpn().Contains(SslApplicationProtocol.Http2))
+                    {
+                        options.ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http2, SslApplicationProtocol.Http11 };
+                    }
+                    else
+                    {
+                         options.ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http11 };
+                    }
+
+                    await sslStream.AuthenticateAsServerAsync(options, cancellationToken);
+
+#if NET6_0_OR_GREATER
+                    clientStream.Connection.NegotiatedApplicationProtocol = sslStream.NegotiatedApplicationProtocol;
+#endif
+
+                    // Wrap the client stream with the SSL stream
+                    clientStream = new HttpClientStream(this, clientStream.Connection, sslStream, BufferPool, cancellationToken);
+
+                }
+                catch (Exception e)
+                {
+                    sslStream?.Dispose();
+                    throw new Exception("Error during SSL handshake for HTTPS endpoint.", e);
+                }
+            }
+
             var method = await HttpHelper.GetMethod(clientStream, BufferPool, cancellationToken);
             if (clientStream.IsClosed) return;
 

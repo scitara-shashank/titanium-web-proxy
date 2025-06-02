@@ -19,14 +19,21 @@ public class ExplicitProxyEndPoint : ProxyEndPoint
     /// <param name="ipAddress">Listening IP address.</param>
     /// <param name="port">Listening port.</param>
     /// <param name="decryptSsl">Should we decrypt ssl?</param>
-    public ExplicitProxyEndPoint(IPAddress ipAddress, int port, bool decryptSsl = true) : base(ipAddress, port,
+    /// <param name="isHttps">Should this endpoint listen on HTTPS?</param>
+    public ExplicitProxyEndPoint(IPAddress ipAddress, int port, bool decryptSsl = true, bool isHttps = false) : base(ipAddress, port,
         decryptSsl)
     {
+        IsHttps = isHttps;
     }
 
     internal bool IsSystemHttpProxy { get; set; }
 
     internal bool IsSystemHttpsProxy { get; set; }
+
+    /// <summary>
+    ///     Should this explicit endpoint listen on HTTPS instead of HTTP?
+    /// </summary>
+    public bool IsHttps { get; set; }
 
     /// <summary>
     ///     Intercept tunnel connect request.

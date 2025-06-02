@@ -485,6 +485,41 @@ internal class TcpConnectionFactory : IDisposable
             stream = new HttpServerStream(proxyServer, new NetworkStream(tcpServerSocket, true), proxyServer.BufferPool,
                 cancellationToken);
 
+            // If using an HTTPS upstream proxy, perform SSL handshake with the proxy.
+            if (externalProxy != null && externalProxy.ProxyType == ExternalProxyType.Https)
+            {
+                SslStream? sslStream = null;
+                try
+                {
+                    sslStream = new SslStream(stream, false,
+                        (sender, certificate, chain, sslPolicyErrors) =>
+                            proxyServer.ValidateServerCertificate(sender, sessionArgs, certificate, chain,
+                                sslPolicyErrors),
+                        (sender, targetHost, localCertificates, remoteCertificate, acceptableIssuers) =>
+                            proxyServer.SelectClientCertificate(sender, sessionArgs, targetHost, localCertificates,
+                                remoteCertificate, acceptableIssuers));
+
+                    var options = new SslClientAuthenticationOptions
+                    {
+                        TargetHost = externalProxy.HostName,
+                        ClientCertificates = null, // TODO: Add client certificate support if needed
+                        EnabledSslProtocols = proxyServer.SupportedSslProtocols,
+                        CertificateRevocationCheckMode = proxyServer.CheckCertificateRevocation,
+                        ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http11 } // Assume HTTP/1.1 for CONNECT to upstream proxy
+                    };
+
+                    await sslStream.AuthenticateAsClientAsync(options, cancellationToken);
+
+                    stream = new HttpServerStream(proxyServer, sslStream, proxyServer.BufferPool, cancellationToken);
+
+                }
+                catch (Exception e)
+                {
+                    sslStream?.Dispose();
+                    throw new Exception($"Error during SSL handshake with upstream HTTPS proxy {externalProxy.HostName}:{externalProxy.Port}", e);
+                }
+            }
+
             if (externalProxy != null && externalProxy.ProxyType == ExternalProxyType.Http && (isConnect || isHttps))
             {
                 var authority = $"{remoteHostName}:{remotePort}";
