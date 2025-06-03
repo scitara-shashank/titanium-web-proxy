@@ -515,9 +515,29 @@ public sealed class CertificateManager : IDisposable
                 // run certificate creation task & add it to pending tasks
                 createCertificateTask = Task.Run(() =>
                 {
-                    var result = CreateCertificate(certificateName, false);
-                    if (result != null)
+                    try
                     {
+                        // Ensure root certificate exists
+                        if (RootCertificate == null)
+                        {
+                            if (!CreateRootCertificate())
+                            {
+                                throw new Exception("Failed to create root certificate");
+                            }
+                        }
+
+                        var result = CreateCertificate(certificateName, false);
+                        if (result == null)
+                        {
+                            throw new Exception($"Failed to create certificate for {certificateName}");
+                        }
+
+                        // Validate the certificate
+                        if (result.NotBefore > DateTime.Now || result.NotAfter < DateTime.Now)
+                        {
+                            throw new Exception($"Certificate validity period is invalid for {certificateName}");
+                        }
+
                         try
                         {
                             // Store in user's personal store
@@ -565,13 +585,19 @@ public sealed class CertificateManager : IDisposable
                             }
 
                             cachedCertificates.TryAdd(certificateName, new CachedCertificate(result));
+                            return result;
                         }
                         catch (Exception ex)
                         {
                             OnException(new Exception($"Failed to store certificate in certificate store: {ex.Message}"));
+                            return result; // Return the certificate even if storage fails
                         }
                     }
-                    return result;
+                    catch (Exception ex)
+                    {
+                        OnException(new Exception($"Failed to create server certificate: {ex.Message}"));
+                        return null;
+                    }
                 });
 
                 pendingCertificateCreationTasks[certificateName] = createCertificateTask;
