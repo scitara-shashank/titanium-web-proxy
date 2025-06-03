@@ -17,6 +17,7 @@ using Titanium.Web.Proxy.Models;
 using Titanium.Web.Proxy.Network.Tcp;
 using Titanium.Web.Proxy.StreamExtended;
 using SslExtensions = Titanium.Web.Proxy.Extensions.SslExtensions;
+using System.Collections.Generic;
 
 namespace Titanium.Web.Proxy;
 
@@ -60,13 +61,13 @@ public partial class ProxyServer
                     string? clientHelloHostname = null;
                     if (clientHelloInfo != null)
                     {
-                         clientHelloHostname = clientHelloInfo.ServerName;
+                         clientHelloHostname = clientHelloInfo.GetServerName();
                     }
 
                     // Use the hostname from SNI, or a default if SNI is not available.
                     var targetHostname = !string.IsNullOrEmpty(clientHelloHostname)
                         ? clientHelloHostname
-                        : ((IPEndPoint)clientConnection.Client.LocalEndPoint!).Address.ToString(); // Fallback to proxy IP if no SNI
+                        : ((IPEndPoint)clientConnection.LocalEndPoint!).Address.ToString(); // Fallback to proxy IP if no SNI
 
                     var certName = HttpHelper.GetWildCardDomainName(targetHostname,
                         CertificateManager.DisableWildCardCertificates);

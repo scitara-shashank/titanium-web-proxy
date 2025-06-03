@@ -119,5 +119,8 @@ public enum ExternalProxyType
     Socks4,
 
     /// <summary>A SOCKS5 proxy server.</summary>
-    Socks5
+    Socks5,
+
+    /// <summary>A HTTPS proxy server.</summary>
+    Https
 }
