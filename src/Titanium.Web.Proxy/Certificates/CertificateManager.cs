@@ -510,15 +510,67 @@ public sealed class CertificateManager : IDisposable
             }
 
             // handle burst requests with same certificate name
-            // by checking for existing task for same certificate name
             if (!pendingCertificateCreationTasks.TryGetValue(certificateName, out createCertificateTask))
             {
                 // run certificate creation task & add it to pending tasks
                 createCertificateTask = Task.Run(() =>
                 {
                     var result = CreateCertificate(certificateName, false);
-                    if (result != null) cachedCertificates.TryAdd(certificateName, new CachedCertificate(result));
+                    if (result != null)
+                    {
+                        try
+                        {
+                            // Store in user's personal store
+                            using (var store = new X509Store(StoreName.My, StoreLocation.CurrentUser))
+                            {
+                                store.Open(OpenFlags.ReadWrite);
+                                store.Add(result);
+                                store.Close();
+                            }
 
+                            // Store in user's root store
+                            using (var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser))
+                            {
+                                store.Open(OpenFlags.ReadWrite);
+                                store.Add(result);
+                                store.Close();
+                            }
+
+                            // If running with admin privileges, also store in machine stores
+                            if (RunTime.IsWindows && !RunTime.IsUwpOnWindows)
+                            {
+                                try
+                                {
+                                    // Store in machine's personal store
+                                    using (var store = new X509Store(StoreName.My, StoreLocation.LocalMachine))
+                                    {
+                                        store.Open(OpenFlags.ReadWrite);
+                                        store.Add(result);
+                                        store.Close();
+                                    }
+
+                                    // Store in machine's root store
+                                    using (var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine))
+                                    {
+                                        store.Open(OpenFlags.ReadWrite);
+                                        store.Add(result);
+                                        store.Close();
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    // Log but don't fail if machine store access fails
+                                    OnException(new Exception($"Failed to store certificate in machine store: {ex.Message}"));
+                                }
+                            }
+
+                            cachedCertificates.TryAdd(certificateName, new CachedCertificate(result));
+                        }
+                        catch (Exception ex)
+                        {
+                            OnException(new Exception($"Failed to store certificate in certificate store: {ex.Message}"));
+                        }
+                    }
                     return result;
                 });
 
