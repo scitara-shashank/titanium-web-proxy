@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Titanium.Web.Proxy.EventArguments;
+using Titanium.Web.Proxy.Exceptions;
 using Titanium.Web.Proxy.Extensions;
 using Titanium.Web.Proxy.Helpers;
 using Titanium.Web.Proxy.Http;
@@ -502,25 +503,62 @@ internal class TcpConnectionFactory : IDisposable
                     var options = new SslClientAuthenticationOptions
                     {
                         TargetHost = externalProxy.HostName,
-                        ClientCertificates = null, // TODO: Add client certificate support if needed
+                        ClientCertificates = null,
                         EnabledSslProtocols = proxyServer.SupportedSslProtocols,
                         CertificateRevocationCheckMode = proxyServer.CheckCertificateRevocation,
-                        ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http11 } // Assume HTTP/1.1 for CONNECT to upstream proxy
+                        ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http11 }
                     };
 
                     await sslStream.AuthenticateAsClientAsync(options, cancellationToken);
 
                     stream = new HttpServerStream(proxyServer, sslStream, proxyServer.BufferPool, cancellationToken);
 
+                    // Send CONNECT request over secure channel
+                    var authority = $"{remoteHostName}:{remotePort}";
+                    var authorityBytes = authority.GetByteString();
+                    var connectRequest = new ConnectRequest(authorityBytes)
+                    {
+                        IsHttps = isHttps,
+                        RequestUriString8 = authorityBytes,
+                        HttpVersion = httpVersion
+                    };
+
+                    connectRequest.Headers.AddHeader(KnownHeaders.Connection, KnownHeaders.ConnectionKeepAlive);
+                    connectRequest.Headers.AddHeader(KnownHeaders.Host, authority);
+
+                    if (!string.IsNullOrEmpty(externalProxy.UserName) && externalProxy.Password != null)
+                    {
+                        connectRequest.Headers.AddHeader(HttpHeader.ProxyConnectionKeepAlive);
+                        connectRequest.Headers.AddHeader(
+                            HttpHeader.GetProxyAuthorizationHeader(externalProxy.UserName, externalProxy.Password));
+                    }
+
+                    await proxyServer.OnBeforeUpStreamConnectRequest(connectRequest);
+
+                    await stream.WriteRequestAsync(connectRequest, cancellationToken);
+
+                    var httpStatus = await stream.ReadResponseStatus(cancellationToken);
+                    var headers = new HeaderCollection();
+                    await HeaderParser.ReadHeaders(stream, headers, cancellationToken);
+
+                    if (httpStatus.StatusCode != 200 && !httpStatus.Description.EqualsIgnoreCase("OK")
+                                                     && !httpStatus.Description.EqualsIgnoreCase("Connection Established"))
+                    {
+                        throw new ProxyConnectException($"Upstream HTTPS proxy failed to create a secure tunnel. Status: {httpStatus.StatusCode} {httpStatus.Description}", null, sessionArgs);
+                    }
+                }
+                catch (AuthenticationException ex)
+                {
+                    sslStream?.Dispose();
+                    throw new ProxyConnectException($"SSL authentication failed with upstream HTTPS proxy {externalProxy.HostName}:{externalProxy.Port}", ex, sessionArgs);
                 }
                 catch (Exception e)
                 {
                     sslStream?.Dispose();
-                    throw new Exception($"Error during SSL handshake with upstream HTTPS proxy {externalProxy.HostName}:{externalProxy.Port}", e);
+                    throw new ProxyConnectException($"Error during connection to upstream HTTPS proxy {externalProxy.HostName}:{externalProxy.Port}", e, sessionArgs);
                 }
             }
-
-            if (externalProxy != null && externalProxy.ProxyType == ExternalProxyType.Http && (isConnect || isHttps))
+            else if (externalProxy != null && externalProxy.ProxyType == ExternalProxyType.Http && (isConnect || isHttps))
             {
                 var authority = $"{remoteHostName}:{remotePort}";
                 var authorityBytes = authority.GetByteString();
