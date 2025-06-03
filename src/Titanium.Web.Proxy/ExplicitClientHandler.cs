@@ -83,6 +83,7 @@ public partial class ProxyServer
                     options.ClientCertificateRequired = false;
                     options.EnabledSslProtocols = SupportedSslProtocols;
                     options.CertificateRevocationCheckMode = X509RevocationMode.NoCheck;
+                    options.RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true;
 
                     // If HTTP/2 is enabled and supported by the client (via ALPN in ClientHello),
                     // include h2 in the application protocols.
@@ -95,7 +96,14 @@ public partial class ProxyServer
                          options.ApplicationProtocols = new List<SslApplicationProtocol> { SslApplicationProtocol.Http11 };
                     }
 
-                    await sslStream.AuthenticateAsServerAsync(options, cancellationToken);
+                    try 
+                    {
+                        await sslStream.AuthenticateAsServerAsync(options, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception($"SSL handshake failed: {ex.Message}", ex);
+                    }
 
 #if NET6_0_OR_GREATER
                     clientStream.Connection.NegotiatedApplicationProtocol = sslStream.NegotiatedApplicationProtocol;
