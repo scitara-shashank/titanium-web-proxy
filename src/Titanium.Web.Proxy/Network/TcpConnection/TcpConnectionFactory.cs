@@ -331,7 +331,7 @@ internal class TcpConnectionFactory : IDisposable
         retry:
         try
         {
-            var socks = externalProxy != null && externalProxy.ProxyType != ExternalProxyType.Http;
+            var socks = externalProxy != null && externalProxy.ProxyType != ExternalProxyType.Http && externalProxy.ProxyType != ExternalProxyType.Https;
             var hostname = remoteHostName;
             var port = remotePort;
 
