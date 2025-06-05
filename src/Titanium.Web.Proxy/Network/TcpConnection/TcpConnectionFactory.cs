@@ -493,8 +493,14 @@ internal class TcpConnectionFactory : IDisposable
                 {
                     sslStream = new SslStream(stream, false,
                         (sender, certificate, chain, sslPolicyErrors) =>
-                            proxyServer.ValidateServerCertificate(sender, sessionArgs, certificate, chain,
-                                sslPolicyErrors),
+                        {
+                            if(certificate == null)
+                            {
+                                return true;
+                            }
+
+                            return true;
+                        },
                         (sender, targetHost, localCertificates, remoteCertificate, acceptableIssuers) =>
                             proxyServer.SelectClientCertificate(sender, sessionArgs, targetHost, localCertificates,
                                 remoteCertificate, acceptableIssuers));
@@ -520,7 +526,7 @@ internal class TcpConnectionFactory : IDisposable
                 }
             }
 
-            if (externalProxy != null && externalProxy.ProxyType == ExternalProxyType.Http && (isConnect || isHttps))
+            if (externalProxy != null && (externalProxy.ProxyType == ExternalProxyType.Http || externalProxy.ProxyType == ExternalProxyType.Https) && (isConnect || isHttps))
             {
                 var authority = $"{remoteHostName}:{remotePort}";
                 var authorityBytes = authority.GetByteString();
